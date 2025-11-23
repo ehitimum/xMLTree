@@ -270,7 +270,7 @@ class XMLEditor:
             self.treeview.item(parent, open=True)
             parent = self.treeview.parent(parent)
         self.treeview.see(item)
-
+# Add new release
 if __name__ == "__main__":
     root = tk.Tk()
     app = XMLEditor(root)
