@@ -24,7 +24,7 @@ jobs:
         pip install pyinstaller
 
     - name: Build executable
-      run: pyinstaller --onefile --windowed xMLTree.py
+      run: pyinstaller --onefile --windowed src/xMLTree.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
