@@ -24,10 +24,10 @@ jobs:
         pip install pyinstaller
 
     - name: Build executable
-      run: pyinstaller --onefile --windowed xml_editor.py
+      run: pyinstaller --onefile --windowed xMLTree.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: xml-editor-executable
-        path: dist/xml_editor
+        name: xMLTree-executable
+        path: dist/xMLTree

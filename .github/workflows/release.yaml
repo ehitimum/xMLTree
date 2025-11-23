@@ -23,10 +23,10 @@ jobs:
         pip install pyinstaller
 
     - name: Build executable
-        run: pyinstaller --onefile --windowed xml_editor.py
+        run: pyinstaller --onefile --windowed xMLTree.py
 
     - name: Rename binary
-        run: mv dist/xml_editor dist/xml-editor-linux
+        run: mv dist/xMLTree dist/xMLTree-linux
 
     - name: Create Release
         id: create_release
@@ -45,8 +45,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: dist/xml-editor-linux
-          asset_name: xml-editor-linux
+          asset_path: dist/xMLTree-linux
+          asset_name: xMLTree-linux
           asset_content_type: application/octet-stream
 
     - name: Upload icon
@@ -55,6 +55,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: assets/xml-editor-linux.png
-          asset_name: xml-editor-linux.png
+          asset_path: assets/xMLTree-linux.png
+          asset_name: xMLTree-linux.png
           asset_content_type: image/png

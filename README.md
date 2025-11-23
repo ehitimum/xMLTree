@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="icons/xml-editor.png" alt="Project Icon" width="120">
+  <img src="icons/xMLTree.png" alt="Project Icon" width="120">
 </p>
 
 # xMLTree
