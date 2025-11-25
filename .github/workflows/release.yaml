@@ -10,7 +10,16 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # ← This is the key line
+      contents: write
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            exe_name: xMLTree-linux
+          - os: windows-latest
+            exe_name: xMLTree.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -24,16 +33,25 @@ jobs:
         run: pip install pyinstaller
 
       - name: Build executable
-        run: pyinstaller --onefile --windowed src/xMLTree.py
+        run: |
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            pyinstaller --onefile --windowed src/xMLTree.py
+          else
+            pyinstaller --onefile --windowed src\\xMLTree.py
+          fi
 
       - name: Rename binary
-        run: mv dist/xMLTree dist/xMLTree-linux
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            mv dist/xMLTree dist/${{ matrix.exe_name }}
+          else
+            mv dist/xMLTree.exe dist/${{ matrix.exe_name }}
+          fi
 
-      - name: Release
+      - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/xMLTree-linux
-            assets/xMLTree-linux.png
+          files: dist/${{ matrix.exe_name }}
           draft: false
           prerelease: false
