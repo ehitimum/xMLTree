@@ -29,6 +29,9 @@ class XMLEditor:
         
         add_child_button = tk.Button(button_frame, text="Add Child", command=self.add_child)
         add_child_button.pack(side='left')
+
+        duplicate_button = tk.Button(button_frame, text="Duplicate", command=self.duplicate_item)  # NEW
+        duplicate_button.pack(side='left')
         
         delete_button = tk.Button(button_frame, text="Delete Selected", command=self.delete_item)
         delete_button.pack(side='left')
@@ -87,14 +90,25 @@ class XMLEditor:
         # self.next_button.config(state='disabled')
         # self.search_entry.delete(0, tk.END)
 
+    # def populate_tree(self, parent_item, element):
+    #     attrib_str = ' '.join([f'{k}="{v}"' for k, v in element.attrib.items()])
+    #     display_text = element.tag
+    #     if attrib_str:
+    #         display_text += f' {attrib_str}'
+    #     text_value = element.text.strip() if element.text else ''
+    #     item = self.treeview.insert(parent_item, 'end', text=display_text, values=(text_value,))
+    #     self.item_to_element[item] = element
+    #     for child in element:
+    #         self.populate_tree(item, child)
+    #     self.search_results = []
+    #     self.current_search_index = -1
+    #     self.prev_button.config(state='disabled')
+    #     self.next_button.config(state='disabled')
+    #     if hasattr(self, 'search_entry'):
+    #         self.search_entry.delete(0, tk.END)
+
     def populate_tree(self, parent_item, element):
-        attrib_str = ' '.join([f'{k}="{v}"' for k, v in element.attrib.items()])
-        display_text = element.tag
-        if attrib_str:
-            display_text += f' {attrib_str}'
-        text_value = element.text.strip() if element.text else ''
-        item = self.treeview.insert(parent_item, 'end', text=display_text, values=(text_value,))
-        self.item_to_element[item] = element
+        item = self._add_element_to_treeview(parent_item, element)  # Use helper method
         for child in element:
             self.populate_tree(item, child)
         self.search_results = []
@@ -147,6 +161,23 @@ class XMLEditor:
             
             tk.Button(dialog, text="Save", command=save_edit).pack()
 
+    # def add_child(self):
+    #     selected = self.treeview.selection()
+    #     if selected:
+    #         parent_item = selected[0]
+    #         parent_element = self.item_to_element[parent_item]
+    #         new_element = ET.SubElement(parent_element, 'new_tag')
+    #         new_element.text = 'new_text'
+    #         # Insert into treeview
+    #         attrib_str = ' '.join([f'{k}="{v}"' for k, v in new_element.attrib.items()])
+    #         display_text = new_element.tag
+    #         if attrib_str:
+    #             display_text += f' {attrib_str}'
+    #         text_value = new_element.text.strip() if new_element.text else ''
+    #         new_item = self.treeview.insert(parent_item, 'end', text=display_text, values=(text_value,))
+    #         self.item_to_element[new_item] = new_element
+    #         self.treeview.see(new_item)
+
     def add_child(self):
         selected = self.treeview.selection()
         if selected:
@@ -154,15 +185,21 @@ class XMLEditor:
             parent_element = self.item_to_element[parent_item]
             new_element = ET.SubElement(parent_element, 'new_tag')
             new_element.text = 'new_text'
-            # Insert into treeview
-            attrib_str = ' '.join([f'{k}="{v}"' for k, v in new_element.attrib.items()])
-            display_text = new_element.tag
-            if attrib_str:
-                display_text += f' {attrib_str}'
-            text_value = new_element.text.strip() if new_element.text else ''
-            new_item = self.treeview.insert(parent_item, 'end', text=display_text, values=(text_value,))
-            self.item_to_element[new_item] = new_element
-            self.treeview.see(new_item)
+            
+            # Insert into treeview using the helper method
+            self._add_element_to_treeview(parent_item, new_element)
+            self.treeview.see(self.treeview.get_children(parent_item)[-1])  # Scroll to last child
+    
+    def _add_element_to_treeview(self, parent_item, element):
+        """Helper method to add an element to treeview"""
+        attrib_str = ' '.join([f'{k}="{v}"' for k, v in element.attrib.items()])
+        display_text = element.tag
+        if attrib_str:
+            display_text += f' {attrib_str}'
+        text_value = element.text.strip() if element.text else ''
+        new_item = self.treeview.insert(parent_item, 'end', text=display_text, values=(text_value,))
+        self.item_to_element[new_item] = element
+        return new_item
 
     def delete_item(self):
         selected = self.treeview.selection()
@@ -385,6 +422,92 @@ class XMLEditor:
             self.treeview.item(parent, open=True)
             parent = self.treeview.parent(parent)
         self.treeview.see(item)
+
+    def duplicate_item(self):
+        selected = self.treeview.selection()
+        if not selected:
+            tk.messagebox.showinfo("Info", "Please select an element to duplicate.")
+            return
+            
+        item = selected[0]
+        element = self.item_to_element[item]
+        parent_item = self.treeview.parent(item)
+        
+        if not parent_item:
+            tk.messagebox.showwarning("Warning", "Cannot duplicate root element.")
+            return
+        
+        parent_element = self.item_to_element[parent_item]
+        
+        # Create a deep copy of the element
+        import copy
+        new_element = copy.deepcopy(element)
+        
+        # Generate the next available index for elements like i1, i2, etc.
+        if element.tag.startswith('i') and element.tag[1:].isdigit():
+            new_index = self._get_next_available_index(parent_element, element.tag)
+            new_element.tag = f"i{new_index}"
+            
+            # Also update any Alias elements if they exist to reflect the new index
+            for alias_elem in new_element.findall('.//Alias'):
+                if alias_elem.text and element.tag in alias_elem.text:
+                    # Update alias to reflect new index (e.g., cpe-GERANFreqGroup1 -> cpe-GERANFreqGroup2)
+                    old_alias = alias_elem.text
+                    base_name = old_alias.rsplit(element.tag[1:], 1)[0]  # Remove the old index
+                    alias_elem.text = f"{base_name}{new_index}"
+        
+        # Add the new element to the parent
+        parent_element.append(new_element)
+        
+        # Add to treeview
+        attrib_str = ' '.join([f'{k}="{v}"' for k, v in new_element.attrib.items()])
+        display_text = new_element.tag
+        if attrib_str:
+            display_text += f' {attrib_str}'
+        text_value = new_element.text.strip() if new_element.text else ''
+        new_item = self.treeview.insert(parent_item, 'end', text=display_text, values=(text_value,))
+        self.item_to_element[new_item] = new_element
+        
+        # Recursively populate children of the duplicated element
+        for child in new_element:
+            self._populate_duplicate_children(new_item, child)
+        
+        # Expand and scroll to the new item
+        self.treeview.see(new_item)
+        self.treeview.selection_set(new_item)
+        
+        tk.messagebox.showinfo("Info", f"Successfully duplicated {element.tag} as {new_element.tag}")
+    def _get_next_available_index(self, parent_element, tag_pattern):
+        """Find the next available index for elements like i1, i2, etc."""
+        if not tag_pattern.startswith('i') or not tag_pattern[1:].isdigit():
+            return 1
+        
+        existing_indices = []
+        for child in parent_element:
+            if child.tag.startswith('i') and child.tag[1:].isdigit():
+                try:
+                    existing_indices.append(int(child.tag[1:]))
+                except ValueError:
+                    continue
+        
+        if not existing_indices:
+            return 1
+        
+        return max(existing_indices) + 1
+
+    def _populate_duplicate_children(self, parent_item, element):
+        """Recursively populate children for duplicated elements"""
+        attrib_str = ' '.join([f'{k}="{v}"' for k, v in element.attrib.items()])
+        display_text = element.tag
+        if attrib_str:
+            display_text += f' {attrib_str}'
+        text_value = element.text.strip() if element.text else ''
+        item = self.treeview.insert(parent_item, 'end', text=display_text, values=(text_value,))
+        self.item_to_element[item] = element
+        
+        for child in element:
+            self._populate_duplicate_children(item, child)
+
 # Add new release
 if __name__ == "__main__":
     root = tk.Tk()
