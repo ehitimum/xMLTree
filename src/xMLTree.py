@@ -46,12 +46,22 @@ class XMLEditor:
         self.search_results = []  # List of matching treeview item IDs
         self.current_search_index = -1  # Current position in search results 
 
-        # Search frame
+        # Search frame - UPDATED
         search_frame = tk.Frame(self.root)
         search_frame.pack(fill='x', pady=5)
 
-        tk.Label(search_frame, text="Search by Attribute:").pack(side='left')
-        self.search_entry = tk.Entry(search_frame, width=30)
+        # Add search mode selection
+        self.search_mode = tk.StringVar(value="content")  # "content" or "path"
+        
+        mode_frame = tk.Frame(search_frame)
+        mode_frame.pack(fill='x')
+        
+        tk.Label(mode_frame, text="Search Mode:").pack(side='left')
+        tk.Radiobutton(mode_frame, text="Content", variable=self.search_mode, value="content").pack(side='left')
+        tk.Radiobutton(mode_frame, text="Path", variable=self.search_mode, value="path").pack(side='left')
+        
+        tk.Label(search_frame, text="Search:").pack(side='left')
+        self.search_entry = tk.Entry(search_frame, width=40)
         self.search_entry.pack(side='left', padx=5)
 
         search_button = tk.Button(search_frame, text="Search", command=self.perform_search)
@@ -174,6 +184,67 @@ class XMLEditor:
             if save_path:
                 self.etree.write(save_path, encoding='utf-8', xml_declaration=True)
                 self.file_path = save_path  # Update file path if saved to new location
+    
+    def perform_path_search(self, path_query):
+        path_parts = path_query.split('.')
+        if not path_parts:
+            return
+        
+        # Clear previous search results and highlighting
+        for item in self.treeview.get_children():
+            self.treeview.item(item, tags=())
+        
+        self.search_results = []
+        self.current_search_index = -1
+        
+        # Start searching from root
+        self._find_by_path('', path_parts, 0)
+        
+        if self.search_results:
+            self.prev_button.config(state='normal')
+            self.next_button.config(state='normal')
+            self.next_match()  # Auto-select first match
+            tk.messagebox.showinfo("Info", f"Found {len(self.search_results)} matches for path.")
+        else:
+            self.prev_button.config(state='disabled')
+            self.next_button.config(state='disabled')
+            tk.messagebox.showinfo("Info", "No matches found for the given path.")
+
+    def _find_by_path(self, parent_item, path_parts, current_index):
+        """Recursively find elements matching the path"""
+        if current_index >= len(path_parts):
+            return
+            
+        current_part = path_parts[current_index]
+        
+        for item in self.treeview.get_children(parent_item):
+            element = self.item_to_element[item]
+            
+            # Check if current element matches the current path part
+            # Handle numeric indices (like "1" meaning <i1> element)
+            if current_part.isdigit():
+                # Look for elements like <i1>, <i2>, etc.
+                expected_tag = f"i{current_part}"
+                if element.tag == expected_tag:
+                    if current_index == len(path_parts) - 1:
+                        # This is the final element in the path
+                        self.search_results.append(item)
+                    else:
+                        # Continue searching in children
+                        self._find_by_path(item, path_parts, current_index + 1)
+            else:
+                # Regular tag name matching
+                tag_name = element.tag.split('}')[-1] if '}' in element.tag else element.tag
+                if current_part.lower() == tag_name.lower():
+                    if current_index == len(path_parts) - 1:
+                        # This is the final element in the path
+                        self.search_results.append(item)
+                    else:
+                        # Continue searching in children
+                        self._find_by_path(item, path_parts, current_index + 1)
+            
+            # Also search in children regardless of match (for cases where path continues through non-matching parents)
+            self._find_by_path(item, path_parts, current_index)
 
     def perform_search(self):
         query = self.search_entry.get().strip()
@@ -187,17 +258,61 @@ class XMLEditor:
         
         self.search_results = []
         self.current_search_index = -1
-        self._find_matches('', query.lower())  # Start from root with lowercase query
         
-        if self.search_results:
-            self.prev_button.config(state='normal')
-            self.next_button.config(state='normal')
-            self.next_match()  # Auto-select first match
-            tk.messagebox.showinfo("Info", f"Found {len(self.search_results)} matches.")
+        # Choose search mode based on selection
+        if self.search_mode.get() == "path":
+            self.perform_path_search(query)
         else:
-            self.prev_button.config(state='disabled')
-            self.next_button.config(state='disabled')
-            tk.messagebox.showinfo("Info", "No matches found.")
+            self._find_matches('', query.lower())  # Existing content search
+            
+            if self.search_results:
+                self.prev_button.config(state='normal')
+                self.next_button.config(state='normal')
+                self.next_match()  # Auto-select first match
+                tk.messagebox.showinfo("Info", f"Found {len(self.search_results)} matches.")
+            else:
+                self.prev_button.config(state='disabled')
+                self.next_button.config(state='disabled')
+                tk.messagebox.showinfo("Info", "No matches found.")
+    def get_element_path(self, element):
+        """Get the dot-separated path for an element (for debugging)"""
+        path_parts = []
+        current = element
+        while current is not None and current != self.root_element:
+            # Handle indexed elements (i1, i2, etc.)
+            if current.tag.startswith('i') and current.tag[1:].isdigit():
+                path_parts.append(current.tag[1:])  # Just the number
+            else:
+                path_parts.append(current.tag)
+            current = current.getparent()
+        
+        path_parts.reverse()
+        return '.'.join(path_parts)
+
+
+    # def perform_search(self):
+    #     query = self.search_entry.get().strip()
+    #     if not query:
+    #         tk.messagebox.showinfo("Info", "Enter search term.")
+    #         return
+        
+    #     # Clear previous search results and highlighting
+    #     for item in self.treeview.get_children():
+    #         self.treeview.item(item, tags=())
+        
+    #     self.search_results = []
+    #     self.current_search_index = -1
+    #     self._find_matches('', query.lower())  # Start from root with lowercase query
+        
+    #     if self.search_results:
+    #         self.prev_button.config(state='normal')
+    #         self.next_button.config(state='normal')
+    #         self.next_match()  # Auto-select first match
+    #         tk.messagebox.showinfo("Info", f"Found {len(self.search_results)} matches.")
+    #     else:
+    #         self.prev_button.config(state='disabled')
+    #         self.next_button.config(state='disabled')
+    #         tk.messagebox.showinfo("Info", "No matches found.")
 
     def _find_matches(self, parent_item, query_lower):
         for item in self.treeview.get_children(parent_item):
