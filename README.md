@@ -13,6 +13,8 @@ This is a lightweight XML editor that supports easy tree view edit option.
 - Add / delete nodes  
 - Works flawlessly with namespaced XML  
 - Single executable (no Python needed)
+- Path Search
+- Copy child
 
 ![ss1](assets/ss1.png)
 ![ss2](assets/ss2.png)
