@@ -3,11 +3,40 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog
 import xml.etree.ElementTree as ET
+import sys
+import os
+
+# Try to import pandas and ExcelColumnExtractorApp
+PANDAS_AVAILABLE = False
+ExcelColumnExtractorApp = None
+
+try:
+    import pandas as pd
+    # Import the Excel extractor class from the local module
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from excel_column_extractor import ExcelColumnExtractorApp
+    PANDAS_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: pandas not available - Excel column extractor will be disabled. ({e})")
+except ValueError as e:
+    if "numpy.dtype size changed" in str(e):
+        print(f"Warning: numpy binary incompatibility detected - Excel column extractor will be disabled.")
+        print(f"  Error: {e}")
+        print(f"  Solution: Create a virtual environment and install compatible numpy/packages:")
+        print(f"    python3 -m venv .venv")
+        print(f"    source .venv/bin/activate")
+        print(f"    pip install pandas openpyxl")
+    else:
+        print(f"Warning: Failed to import ExcelColumnExtractorApp: {e}")
+except Exception as e:
+    print(f"Warning: Failed to import ExcelColumnExtractorApp: {e}")
 
 class XMLEditor:
     def __init__(self, root):
         self.root = root
-        self.root.title("XML Tree Editor")
+        # Only set title if root is a Tk or Toplevel window
+        if hasattr(self.root, 'title') and callable(self.root.title):
+            self.root.title("XML Tree Editor")
         
         # Treeview setup with columns for tag/attrib and text
         self.treeview = ttk.Treeview(self.root, columns=('text',), show='tree headings')
@@ -508,8 +537,60 @@ class XMLEditor:
         for child in element:
             self._populate_duplicate_children(item, child)
 
+class MultiApp:
+    """Main application that switches between XML Editor and Excel Column Extractor."""
+    def __init__(self, root):
+        self.root = root
+        self.root.title("xMLTree - XML Editor & Excel Extractor")
+        self.root.geometry("1200x800")
+        self.current_frame = None
+        self.current_app = None
+        
+        # Create menu bar
+        menubar = tk.Menu(root)
+        root.config(menu=menubar)
+        
+        app_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Application", menu=app_menu)
+        app_menu.add_command(label="XML Editor", command=self.show_xml_editor)
+        if PANDAS_AVAILABLE and ExcelColumnExtractorApp is not None:
+            app_menu.add_command(label="Excel Column Extractor", command=self.show_excel_extractor)
+        else:
+            app_menu.add_command(label="Excel Column Extractor (requires pandas)", state="disabled")
+        
+        # Container frame for apps
+        self.container = tk.Frame(root)
+        self.container.pack(fill="both", expand=True)
+        
+        # Show XML Editor by default
+        self.show_xml_editor()
+    
+    def clear_current(self):
+        """Destroy current frame and app."""
+        if self.current_frame:
+            self.current_frame.destroy()
+            self.current_frame = None
+        self.current_app = None
+    
+    def show_xml_editor(self):
+        """Switch to XML Editor."""
+        self.clear_current()
+        self.current_frame = tk.Frame(self.container)
+        self.current_frame.pack(fill="both", expand=True)
+        self.current_app = XMLEditor(self.current_frame)
+    
+    def show_excel_extractor(self):
+        """Switch to Excel Column Extractor."""
+        if not PANDAS_AVAILABLE or ExcelColumnExtractorApp is None:
+            tk.messagebox.showwarning("Feature unavailable", "pandas is not installed. Please install pandas to use Excel Column Extractor.")
+            return
+        self.clear_current()
+        self.current_frame = tk.Frame(self.container)
+        self.current_frame.pack(fill="both", expand=True)
+        self.current_app = ExcelColumnExtractorApp(self.current_frame)
+
 # Add new release
 if __name__ == "__main__":
     root = tk.Tk()
-    app = XMLEditor(root)
+    app = MultiApp(root)
     root.mainloop()

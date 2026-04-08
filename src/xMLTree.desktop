@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=XML Editor
-Comment=A simple XML tree editor built with Tkinter
+Name=xMLTree – XML Editor & Excel Extractor
+Comment=XML tree editor and Excel column extractor built with Tkinter
 Exec=/home/ehitimum/Documents/xMLTree/src/xMLTree.py
 Icon=xMLTree
 Terminal=false
