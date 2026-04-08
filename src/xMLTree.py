@@ -591,6 +591,18 @@ class MultiApp:
 
 # Add new release
 if __name__ == "__main__":
+    import sys
+    print("Arguments:", sys.argv)
+    if "--test" in sys.argv:
+        # Test imports
+        try:
+            import pandas as pd
+            import openpyxl
+            print("All imports successful")
+            sys.exit(0)
+        except ImportError as e:
+            print(f"Import error: {e}")
+            sys.exit(1)
     root = tk.Tk()
     app = MultiApp(root)
     root.mainloop()

@@ -37,8 +37,11 @@ jobs:
       - name: Install PyInstaller
         run: pip install pyinstaller
 
+      - name: Install application dependencies
+        run: pip install -r requirements.txt
+
       - name: Build executable
-        run: pyinstaller --onefile --windowed ${{ matrix.script_path }}
+        run: pyinstaller --onefile --windowed --hidden-import pandas --hidden-import openpyxl --hidden-import numpy --collect-submodules pandas --collect-submodules openpyxl ${{ matrix.script_path }}
 
       - name: Rename output file (Linux)
         if: matrix.os == 'ubuntu-latest'
