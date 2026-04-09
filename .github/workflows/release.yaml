@@ -31,15 +31,9 @@ jobs:
       - name: Get version from tag
         id: get_version
         run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            # Windows - using PowerShell syntax but in bash shell
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            # Linux/macOS
-            VERSION="${GITHUB_REF_NAME#v}"
-          fi
+          VERSION="${GITHUB_REF_NAME#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-        shell: bash  # Force bash shell even on Windows
+        shell: bash
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -55,25 +49,13 @@ jobs:
       - name: Build executable
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
-          pyinstaller \
-            --onefile \
-            --windowed \
-            --hidden-import pandas \
-            --hidden-import openpyxl \
-            --hidden-import numpy \
-            --collect-submodules pandas \
-            --collect-submodules openpyxl \
-            --name "xMLTree-$VERSION" \
-            ${{ matrix.script_path }}
+          pyinstaller --onefile --windowed --hidden-import pandas --hidden-import openpyxl --hidden-import numpy --collect-submodules pandas --collect-submodules openpyxl --name "xMLTree-$VERSION" ${{ matrix.script_path }}
 
       - name: Rename output file
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
             mv "dist/xMLTree-$VERSION" "dist/xMLTree-$VERSION-linux"
-          elif [ "${{ matrix.os }}" = "windows-latest" ]; then
-            # Windows: rename the .exe file
-            mv "dist/xMLTree-$VERSION.exe" "dist/xMLTree-$VERSION.exe"
           fi
 
       - name: Upload build artifact
@@ -95,7 +77,6 @@ jobs:
       - name: Get version from tag
         id: get_version
         run: |
-          # Simple bash command since this runs on ubuntu
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Release version: ${VERSION}"
