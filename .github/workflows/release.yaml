@@ -28,21 +28,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get version from tag (Cross-platform)
+      - name: Get version from tag
         id: get_version
         run: |
-          # Extract version from GITHUB_REF (e.g., refs/tags/v1.4.1)
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            # Windows PowerShell
-            $version = "${{ github.ref_name }}".Replace('v', '')
-            echo "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            echo "Building version: $version"
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            # Windows - using PowerShell syntax but in bash shell
+            VERSION="${GITHUB_REF_NAME#v}"
           else
-            # Linux/macOS bash
-            VERSION="${GITHUB_REF#refs/tags/v}"
-            echo "version=${VERSION}" >> $GITHUB_OUTPUT
-            echo "Building version: ${VERSION}"
+            # Linux/macOS
+            VERSION="${GITHUB_REF_NAME#v}"
           fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
         shell: bash  # Force bash shell even on Windows
 
       - name: Set up Python
