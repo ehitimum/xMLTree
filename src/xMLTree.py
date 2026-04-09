@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 import tkinter as tk
 from tkinter import ttk
-from tkinter import filedialog
+from tkinter import filedialog, scrolledtext, messagebox
 import xml.etree.ElementTree as ET
 import sys
 import os
+from threading import Thread
 
 # Try to import pandas and ExcelColumnExtractorApp
 PANDAS_AVAILABLE = False
 ExcelColumnExtractorApp = None
+BULK_AVAILABLE = False
+BulkUpdateApp = None
+DIFF_AVAILABLE = False
+XMLDifferenceApp = None
 
 try:
     import pandas as pd
@@ -16,6 +21,18 @@ try:
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     from excel_column_extractor import ExcelColumnExtractorApp
     PANDAS_AVAILABLE = True
+    # Try to import bulk update functionality
+    try:
+        from bulk_update import XMLConfigurator, ConfigurationManager
+        BULK_AVAILABLE = True
+    except Exception as e:
+        print(f"Warning: bulk_update not available - Bulk Update feature disabled. ({e})")
+    # Try to import XML difference functionality
+    try:
+        from xml_difference import XMLDifferenceGUI
+        DIFF_AVAILABLE = True
+    except Exception as e:
+        print(f"Warning: xml_difference not available - XML Difference feature disabled. ({e})")
 except ImportError as e:
     print(f"Warning: pandas not available - Excel column extractor will be disabled. ({e})")
 except ValueError as e:
@@ -557,6 +574,14 @@ class MultiApp:
             app_menu.add_command(label="Excel Column Extractor", command=self.show_excel_extractor)
         else:
             app_menu.add_command(label="Excel Column Extractor (requires pandas)", state="disabled")
+        if BULK_AVAILABLE:
+            app_menu.add_command(label="Bulk Update", command=self.show_bulk_update)
+        else:
+            app_menu.add_command(label="Bulk Update (requires pandas)", state="disabled")
+        if DIFF_AVAILABLE:
+            app_menu.add_command(label="XML Difference", command=self.show_xml_difference)
+        else:
+            app_menu.add_command(label="XML Difference (requires pandas)", state="disabled")
         
         # Container frame for apps
         self.container = tk.Frame(root)
@@ -588,6 +613,526 @@ class MultiApp:
         self.current_frame = tk.Frame(self.container)
         self.current_frame.pack(fill="both", expand=True)
         self.current_app = ExcelColumnExtractorApp(self.current_frame)
+
+    def show_bulk_update(self):
+        """Switch to Bulk Update GUI."""
+        if not BULK_AVAILABLE:
+            tk.messagebox.showwarning("Feature unavailable", "bulk_update is not available. Please ensure pandas is installed and bulk_update.py is present.")
+            return
+        self.clear_current()
+        self.current_frame = tk.Frame(self.container)
+        self.current_frame.pack(fill="both", expand=True)
+        self.current_app = BulkUpdateApp(self.current_frame)
+
+    def show_xml_difference(self):
+        """Switch to XML Difference GUI."""
+        if not DIFF_AVAILABLE:
+            tk.messagebox.showwarning("Feature unavailable", "xml_difference is not available. Please ensure pandas is installed and xml_difference.py is present.")
+            return
+        self.clear_current()
+        self.current_frame = tk.Frame(self.container)
+        self.current_frame.pack(fill="both", expand=True)
+        self.current_app = XMLDifferenceGUI(self.current_frame)
+
+
+class BulkUpdateApp:
+    """GUI interface for XML Configurator with preview functionality"""
+    
+    def __init__(self, root):
+        self.root = root
+        if hasattr(self.root, 'title') and callable(self.root.title):
+            self.root.title("Bulk XML Update")
+        if hasattr(self.root, 'geometry') and callable(self.root.geometry):
+            self.root.geometry("1200x700")
+        
+        # Configure styles
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
+        
+        # Initialize configurator
+        self.configurator = XMLConfigurator()
+        
+        # Data storage
+        self.mappings_df = None
+        self.checked_mappings = []
+        self.xml_loaded = False
+        self.mappings_loaded = False
+        
+        # Create GUI
+        self.create_widgets()
+        self.setup_layout()
+        
+    def create_widgets(self):
+        """Create all GUI widgets"""
+        # Top frame for file selection
+        self.top_frame = ttk.Frame(self.root, padding="10")
+        
+        # XML File selection
+        self.xml_label = ttk.Label(self.top_frame, text="XML File:")
+        self.xml_path_var = tk.StringVar()
+        self.xml_entry = ttk.Entry(self.top_frame, textvariable=self.xml_path_var, width=50)
+        self.xml_browse_btn = ttk.Button(self.top_frame, text="Browse...", 
+                                         command=self.browse_xml_file)
+        self.xml_load_btn = ttk.Button(self.top_frame, text="Load XML", 
+                                       command=self.load_xml_file)
+        
+        # Mapping File selection
+        self.mapping_label = ttk.Label(self.top_frame, text="Mapping File (CSV/Excel):")
+        self.mapping_path_var = tk.StringVar()
+        self.mapping_entry = ttk.Entry(self.top_frame, textvariable=self.mapping_path_var, width=50)
+        self.mapping_browse_btn = ttk.Button(self.top_frame, text="Browse...", 
+                                            command=self.browse_mapping_file)
+        self.mapping_load_btn = ttk.Button(self.top_frame, text="Load Mappings", 
+                                          command=self.load_mapping_file)
+        
+        # Column selection
+        self.column_frame = ttk.Frame(self.top_frame)
+        self.path_col_label = ttk.Label(self.column_frame, text="Path Column:")
+        self.path_col_var = tk.StringVar(value="path")
+        self.path_col_entry = ttk.Entry(self.column_frame, textvariable=self.path_col_var, width=15)
+        
+        self.value_col_label = ttk.Label(self.column_frame, text="Value Column:")
+        self.value_col_var = tk.StringVar(value="value")
+        self.value_col_entry = ttk.Entry(self.column_frame, textvariable=self.value_col_var, width=15)
+        
+        self.create_template_btn = ttk.Button(self.column_frame, text="Create Template CSV", 
+                                              command=self.create_template)
+        
+        # Middle frame for preview
+        self.mid_frame = ttk.Frame(self.root, padding="10")
+        
+        # Treeview for preview
+        self.tree_frame = ttk.Frame(self.mid_frame)
+        self.tree_scroll = ttk.Scrollbar(self.tree_frame)
+        self.tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.preview_tree = ttk.Treeview(
+            self.tree_frame,
+            columns=('Status', 'Path', 'Current Value', 'New Value'),
+            show='headings',
+            yscrollcommand=self.tree_scroll.set,
+            height=20
+        )
+        
+        # Configure tree columns
+        self.preview_tree.heading('Status', text='Status')
+        self.preview_tree.heading('Path', text='Path')
+        self.preview_tree.heading('Current Value', text='Current Value')
+        self.preview_tree.heading('New Value', text='New Value')
+        
+        self.preview_tree.column('Status', width=100, anchor='center')
+        self.preview_tree.column('Path', width=400)
+        self.preview_tree.column('Current Value', width=200)
+        self.preview_tree.column('New Value', width=200)
+        
+        self.preview_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.tree_scroll.config(command=self.preview_tree.yview)
+        
+        # Bottom frame for buttons and status
+        self.bottom_frame = ttk.Frame(self.root, padding="10")
+        
+        # Action buttons
+        self.check_btn = ttk.Button(self.bottom_frame, text="Check Mappings", 
+                                   command=self.check_mappings, state='disabled')
+        self.update_btn = ttk.Button(self.bottom_frame, text="Update XML", 
+                                     command=self.update_xml, state='disabled')
+        self.save_as_btn = ttk.Button(self.bottom_frame, text="Save As...", 
+                                      command=self.save_as_xml, state='disabled')
+        
+        # Status display
+        self.status_text = scrolledtext.ScrolledText(
+            self.bottom_frame, 
+            height=8,
+            width=100,
+            state='disabled'
+        )
+        
+        # Progress bar
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(
+            self.bottom_frame, 
+            variable=self.progress_var,
+            maximum=100,
+            mode='determinate'
+        )
+        
+    def setup_layout(self):
+        """Arrange widgets in the window"""
+        # Top frame layout
+        self.top_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=10, pady=5)
+        
+        # Row 1: XML File
+        self.xml_label.grid(row=0, column=0, sticky=tk.W, pady=2)
+        self.xml_entry.grid(row=0, column=1, padx=(5, 0), pady=2, sticky=(tk.W, tk.E))
+        self.xml_browse_btn.grid(row=0, column=2, padx=(5, 0), pady=2)
+        self.xml_load_btn.grid(row=0, column=3, padx=(5, 5), pady=2)
+        
+        # Row 2: Mapping File
+        self.mapping_label.grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.mapping_entry.grid(row=1, column=1, padx=(5, 0), pady=2, sticky=(tk.W, tk.E))
+        self.mapping_browse_btn.grid(row=1, column=2, padx=(5, 0), pady=2)
+        self.mapping_load_btn.grid(row=1, column=3, padx=(5, 5), pady=2)
+        
+        # Row 3: Column selection
+        self.column_frame.grid(row=2, column=0, columnspan=4, sticky=tk.W, pady=(10, 0))
+        self.path_col_label.grid(row=0, column=0, sticky=tk.W)
+        self.path_col_entry.grid(row=0, column=1, padx=(5, 20))
+        self.value_col_label.grid(row=0, column=2, sticky=tk.W)
+        self.value_col_entry.grid(row=0, column=3, padx=(5, 0))
+        self.create_template_btn.grid(row=0, column=4, padx=(10, 0))
+        
+        # Middle frame layout
+        self.mid_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=10, pady=5)
+        self.mid_frame.grid_rowconfigure(0, weight=1)
+        self.mid_frame.grid_columnconfigure(0, weight=1)
+        
+        self.tree_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.tree_frame.grid_rowconfigure(0, weight=1)
+        self.tree_frame.grid_columnconfigure(0, weight=1)
+        
+        # Bottom frame layout
+        self.bottom_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), padx=10, pady=5)
+        
+        # Button row
+        self.check_btn.grid(row=0, column=0, padx=(0, 5), pady=5)
+        self.update_btn.grid(row=0, column=1, padx=5, pady=5)
+        self.save_as_btn.grid(row=0, column=2, padx=(5, 0), pady=5)
+        
+        # Status and progress
+        self.status_text.grid(row=1, column=0, columnspan=3, pady=(5, 0), sticky=(tk.W, tk.E))
+        self.progress_bar.grid(row=2, column=0, columnspan=3, pady=(5, 0), sticky=(tk.W, tk.E))
+        
+        # Configure grid weights
+        self.root.grid_rowconfigure(1, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        
+    def browse_xml_file(self):
+        """Open file dialog for XML file"""
+        filename = filedialog.askopenfilename(
+            title="Select XML File",
+            filetypes=[("XML files", "*.xml"), ("All files", "*.*")]
+        )
+        if filename:
+            self.xml_path_var.set(filename)
+            self.xml_load_btn.config(state='normal')
+    
+    def load_xml_file(self):
+        """Load the selected XML file"""
+        xml_path = self.xml_path_var.get()
+        if not xml_path:
+            messagebox.showerror("Error", "Please select an XML file")
+            return
+        
+        try:
+            success = self.configurator.load_xml(xml_path)
+            if success:
+                self.xml_loaded = True
+                self.log_message(f"✓ XML loaded: {xml_path}")
+                self.update_button_states()
+            else:
+                self.log_message(f"✗ Failed to load XML: {xml_path}", error=True)
+        except Exception as e:
+            self.log_message(f"Error loading XML: {e}", error=True)
+    
+    def browse_mapping_file(self):
+        """Open file dialog for mapping file"""
+        filename = filedialog.askopenfilename(
+            title="Select Mapping File",
+            filetypes=[
+                ("CSV files", "*.csv"),
+                ("Excel files", "*.xlsx *.xls"),
+                ("All files", "*.*")
+            ]
+        )
+        if filename:
+            self.mapping_path_var.set(filename)
+            self.mapping_load_btn.config(state='normal')
+    
+    def load_mapping_file(self):
+        """Load the mapping file"""
+        mapping_path = self.mapping_path_var.get()
+        if not mapping_path:
+            messagebox.showerror("Error", "Please select a mapping file")
+            return
+        
+        try:
+            self.mappings_df = self.configurator.load_mapping_file(mapping_path)
+            if self.mappings_df is not None:
+                self.mappings_loaded = True
+                self.log_message(f"✓ Mappings loaded: {mapping_path}")
+                self.update_button_states()
+                
+                # Show column info
+                columns = list(self.mappings_df.columns)
+                self.log_message(f"  Available columns: {', '.join(columns)}")
+            else:
+                self.log_message(f"✗ Failed to load mappings: {mapping_path}", error=True)
+        except Exception as e:
+            self.log_message(f"Error loading mappings: {e}", error=True)
+    
+    def check_mappings(self):
+        """Check which mappings can be applied"""
+        if not self.xml_loaded:
+            messagebox.showerror("Error", "Please load an XML file first")
+            return
+        
+        if not self.mappings_loaded:
+            messagebox.showerror("Error", "Please load a mapping file first")
+            return
+        
+        # Clear previous results
+        self.preview_tree.delete(*self.preview_tree.get_children())
+        
+        # Get column names
+        path_col = self.path_col_var.get()
+        value_col = self.value_col_var.get()
+        
+        # Validate columns exist
+        if path_col not in self.mappings_df.columns:
+            messagebox.showerror("Error", f"Column '{path_col}' not found in mapping file")
+            return
+        if value_col not in self.mappings_df.columns:
+            messagebox.showerror("Error", f"Column '{value_col}' not found in mapping file")
+            return
+        
+        # Disable buttons during processing
+        self.check_btn.config(state='disabled')
+        self.update_btn.config(state='disabled')
+        
+        # Start checking in background thread
+        self.progress_var.set(0)
+        self.log_message("Checking mappings...")
+        
+        thread = Thread(target=self._check_mappings_thread, 
+                       args=(path_col, value_col))
+        thread.daemon = True
+        thread.start()
+    
+    def _check_mappings_thread(self, path_col, value_col):
+        """Background thread for checking mappings"""
+        try:
+            # Convert DataFrame to list of dicts
+            mapping_data = self.mappings_df.to_dict('records')
+            
+            # Check mappings
+            self.checked_mappings = self.configurator.check_mappings(
+                mapping_data, path_col, value_col
+            )
+            
+            # Update UI in main thread
+            self.root.after(0, self._update_preview_results)
+            
+        except Exception as e:
+            self.root.after(0, lambda: self.log_message(f"Error checking mappings: {e}", error=True))
+            self.root.after(0, lambda: self.check_btn.config(state='normal'))
+    
+    def _update_preview_results(self):
+        """Update UI with check results"""
+        # Clear tree
+        self.preview_tree.delete(*self.preview_tree.get_children())
+        
+        # Populate tree with results
+        found_count = 0
+        not_found_count = 0
+        
+        for mapping in self.checked_mappings:
+            status = "✓ Found" if mapping['found'] else "✗ Not Found"
+            tag = 'found' if mapping['found'] else 'notfound'
+            
+            self.preview_tree.insert(
+                '', 'end',
+                values=(
+                    status,
+                    mapping['path'],
+                    mapping['current_value'],
+                    mapping['new_value']
+                ),
+                tags=(tag,)
+            )
+            
+            if mapping['found']:
+                found_count += 1
+            else:
+                not_found_count += 1
+        
+        # Configure tags for color coding
+        self.preview_tree.tag_configure('found', background='#e8f5e9')
+        self.preview_tree.tag_configure('notfound', background='#ffebee')
+        
+        # Update status
+        self.log_message(f"✓ Check complete: {found_count} found, {not_found_count} not found")
+        
+        # Update progress bar
+        self.progress_var.set(100)
+        
+        # Enable buttons
+        self.check_btn.config(state='normal')
+        if found_count > 0:
+            self.update_btn.config(state='normal')
+        
+        # Show summary
+        if not_found_count > 0:
+            self.log_message(f"⚠ {not_found_count} paths were not found in the XML", warning=True)
+    
+    def update_xml(self):
+        """Apply the checked mappings and update XML"""
+        if not self.checked_mappings:
+            messagebox.showerror("Error", "No mappings to apply. Please check mappings first.")
+            return
+        
+        # Filter only found mappings
+        mappings_to_apply = [m for m in self.checked_mappings if m['found']]
+        
+        if not mappings_to_apply:
+            messagebox.showwarning("Warning", "No found mappings to apply.")
+            return
+        
+        # Ask for confirmation
+        confirm = messagebox.askyesno(
+            "Confirm Update",
+            f"Update {len(mappings_to_apply)} values in the XML?\n\n"
+            f"Only found mappings will be applied. Not found mappings will be ignored."
+        )
+        
+        if not confirm:
+            return
+        
+        # Disable buttons during update
+        self.update_btn.config(state='disabled')
+        self.check_btn.config(state='disabled')
+        
+        self.log_message("Applying updates...")
+        self.progress_var.set(0)
+        
+        # Start update in background thread
+        thread = Thread(target=self._update_xml_thread, args=(mappings_to_apply,))
+        thread.daemon = True
+        thread.start()
+    
+    def _update_xml_thread(self, mappings_to_apply):
+        """Background thread for updating XML"""
+        try:
+            # Apply mappings
+            result = self.configurator.apply_mappings(mappings_to_apply)
+            
+            # Update UI in main thread
+            self.root.after(0, lambda: self._update_complete(result))
+            
+        except Exception as e:
+            self.root.after(0, lambda: self.log_message(f"Error updating XML: {e}", error=True))
+            self.root.after(0, lambda: self.update_btn.config(state='normal'))
+            self.root.after(0, lambda: self.check_btn.config(state='normal'))
+    
+    def _update_complete(self, result):
+        """Handle completion of XML update"""
+        # Update progress bar
+        self.progress_var.set(100)
+        
+        # Log results
+        self.log_message(f"✓ Update complete!")
+        self.log_message(f"  Total mappings: {result['total']}")
+        self.log_message(f"  Successfully applied: {result['applied']}")
+        self.log_message(f"  Failed to apply: {result['failed']}")
+        self.log_message(f"  Not found (skipped): {result['not_found']}")
+        
+        # Enable save button
+        self.save_as_btn.config(state='normal')
+        
+        # Re-enable check button
+        self.check_btn.config(state='normal')
+        
+        # Ask if user wants to save
+        messagebox.showinfo("Update Complete", 
+                           f"XML updated successfully!\n\n"
+                           f"Applied: {result['applied']} values\n"
+                           f"Failed: {result['failed']}\n"
+                           f"Skipped (not found): {result['not_found']}\n\n"
+                           f"Click 'Save As...' to save the updated XML.")
+    
+    def save_as_xml(self):
+        """Save the updated XML to a new file"""
+        if not self.configurator.xml_path:
+            messagebox.showerror("Error", "No XML file loaded")
+            return
+        
+        filename = filedialog.asksaveasfilename(
+            title="Save XML As",
+            defaultextension=".xml",
+            filetypes=[("XML files", "*.xml"), ("All files", "*.*")],
+            initialfile=f"{self.configurator.xml_path.stem}_updated.xml"
+        )
+        
+        if filename:
+            try:
+                success = self.configurator.save_xml(filename)
+                if success:
+                    self.log_message(f"✓ XML saved to: {filename}")
+                else:
+                    self.log_message(f"✗ Failed to save XML", error=True)
+            except Exception as e:
+                self.log_message(f"Error saving XML: {e}", error=True)
+    
+    def create_template(self):
+        """Create a template CSV file with paths from the loaded XML"""
+        if not self.configurator.xml_path:
+            messagebox.showwarning('No XML', 'Please load an XML file first to extract paths for template.')
+            return
+        out = filedialog.asksaveasfilename(title='Save template CSV', defaultextension='.csv', filetypes=[('CSV','*.csv')])
+        if not out:
+            return
+        try:
+            ok = ConfigurationManager.create_template_csv(out, str(self.configurator.xml_path))
+            if ok:
+                self.log_message(f"✓ Template CSV created: {out}")
+                messagebox.showinfo('Template created', f'Template saved to: {out}')
+            else:
+                self.log_message(f"✗ Failed to create template", error=True)
+                messagebox.showerror('Error', 'Failed to create template')
+        except Exception as e:
+            self.log_message(f"Error creating template: {e}", error=True)
+            messagebox.showerror('Error', str(e))
+    
+    def update_button_states(self):
+        """Update button states based on loaded files"""
+        if self.xml_loaded and self.mappings_loaded:
+            self.check_btn.config(state='normal')
+        else:
+            self.check_btn.config(state='disabled')
+    
+    def log_message(self, message: str, error: bool = False, warning: bool = False):
+        """Add message to status text area"""
+        self.status_text.config(state='normal')
+        
+        # Add timestamp and message
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        
+        if error:
+            prefix = "[ERROR]"
+            color = "red"
+        elif warning:
+            prefix = "[WARN]"
+            color = "orange"
+        else:
+            prefix = "[INFO]"
+            color = "green"
+        
+        # Insert message
+        self.status_text.insert(tk.END, f"{timestamp} {prefix} {message}\n", color)
+        
+        # Scroll to bottom
+        self.status_text.see(tk.END)
+        self.status_text.config(state='disabled')
+        
+        # Also log to console
+        import logging
+        logger = logging.getLogger(__name__)
+        if error:
+            logger.error(message)
+        elif warning:
+            logger.warning(message)
+        else:
+            logger.info(message)
 
 # Add new release
 if __name__ == "__main__":
