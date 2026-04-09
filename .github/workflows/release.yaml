@@ -47,11 +47,13 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Build executable
+        shell: bash  # Force bash shell for both Windows and Linux
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
           pyinstaller --onefile --windowed --hidden-import pandas --hidden-import openpyxl --hidden-import numpy --collect-submodules pandas --collect-submodules openpyxl --name "xMLTree-$VERSION" ${{ matrix.script_path }}
 
       - name: Rename output file
+        shell: bash  # Force bash shell for both Windows and Linux
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
