@@ -110,7 +110,7 @@ Just download from the link above – always the latest!
 
 **Note:** The pre‑built executables include pandas and openpyxl, so the Excel Column Extractor feature works out‑of‑the‑box.
 
-Now includes xml differencetiator and bulk xml updater
+Now includes xml differencetiator and bulk xml updater.
 
 ### Author
 Ehitimum 
