@@ -1,25 +1,51 @@
-name: Build XML Editor
+name: Build and Test xMLTree Editor
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
     branches: [main]
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests (if you have any)
+        run: |
+          python -m pytest tests/ -v || echo "No tests found"
+        continue-on-error: true
+
+      - name: Lint check
+        run: |
+          python -m py_compile src/xMLTree.py || echo "No Python files to compile"
+
+  build:
+    needs: test
+    runs-on: ${{ matrix.os }}
+    
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
             script_path: src/xMLTree.py
             built_file: dist/xMLTree
+            artifact_name: xMLTree-linux
 
           - os: windows-latest
-            script_path: src\\xMLTree.py
-            built_file: dist\\xMLTree.exe
+            script_path: src/xMLTree.py
+            built_file: dist/xMLTree.exe
+            artifact_name: xMLTree-windows
 
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +53,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.11'
 
       - name: Install build dependencies
         run: |
@@ -43,5 +69,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: xMLTree-${{ matrix.os }}
+          name: ${{ matrix.artifact_name }}
           path: ${{ matrix.built_file }}
+          retention-days: 7

@@ -7,12 +7,9 @@ on:
       - 'v*'
 
 jobs:
-  release:
-    permissions:
-      contents: write
-
+  build:
     runs-on: ${{ matrix.os }}
-
+    
     strategy:
       matrix:
         include:
@@ -20,19 +17,29 @@ jobs:
             exe_name: xMLTree-linux
             script_path: src/xMLTree.py
             built_file: dist/xMLTree
+            artifact_name: xMLTree-linux
 
           - os: windows-latest
             exe_name: xMLTree.exe
-            script_path: src\\xMLTree.py
-            built_file: dist\\xMLTree.exe
+            script_path: src/xMLTree.py
+            built_file: dist/xMLTree.exe
+            artifact_name: xMLTree-windows
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Get version from tag
+        id: get_version
+        run: |
+          # Remove 'v' prefix from tag
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.11'
 
       - name: Install PyInstaller
         run: pip install pyinstaller
@@ -40,22 +47,73 @@ jobs:
       - name: Install application dependencies
         run: pip install -r requirements.txt
 
-      - name: Build executable
-        run: pyinstaller --onefile --windowed --hidden-import pandas --hidden-import openpyxl --hidden-import numpy --collect-submodules pandas --collect-submodules openpyxl ${{ matrix.script_path }}
+      - name: Build executable with version
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          pyinstaller \
+            --onefile \
+            --windowed \
+            --hidden-import pandas \
+            --hidden-import openpyxl \
+            --hidden-import numpy \
+            --collect-submodules pandas \
+            --collect-submodules openpyxl \
+            --name "xMLTree-$VERSION" \
+            ${{ matrix.script_path }}
 
-      - name: Rename output file (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: mv ${{ matrix.built_file }} dist/${{ matrix.exe_name }}
+      - name: Rename output file
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            mv "dist/xMLTree-$VERSION" "dist/xMLTree-$VERSION-linux"
+          elif [ "${{ matrix.os }}" = "windows-latest" ]; then
+            mv "dist/xMLTree-$VERSION.exe" "dist/xMLTree-$VERSION.exe"
+          fi
 
-      - name: Rename output file (Windows)
-        if: matrix.os == 'windows-latest'
-        run: ren ${{ matrix.built_file }} ${{ matrix.exe_name }}
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/xMLTree-${{ steps.get_version.outputs.version }}*
+          retention-days: 1
 
-      - name: Release
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          # Copy all executables
+          find release-artifacts -type f -name "*.exe" -o -name "xMLTree-*" | while read file; do
+            cp "$file" release-files/
+          done
+          # Copy any additional files
+          cp assets/xMLTree-linux.png release-files/ 2>/dev/null || true
+          ls -la release-files/
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/${{ matrix.exe_name }}
-            assets/xMLTree-linux.png
+          name: "xMLTree Editor v${{ steps.get_version.outputs.version }}"
+          tag_name: ${{ github.ref_name }}
+          files: release-files/*
           draft: false
           prerelease: false
+          generate_release_notes: true
