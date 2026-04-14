@@ -894,7 +894,10 @@ class XMLDifferenceWidget(QWidget):
 class MultiAppWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("xMLTree - Modern UI")
+        app_icon_path = Path(__file__).resolve().parent.parent / "icons" / "xMLTree.png"
+        if app_icon_path.exists():
+            self.setWindowIcon(QIcon(str(app_icon_path)))
+        self.setWindowTitle("xMLTree - Utility Tool")
         self.resize(1280, 820)
         self.is_dark_mode = True
 
@@ -1029,6 +1032,11 @@ class MultiAppWindow(QMainWindow):
 
 if __name__ == "__main__":
     print("Arguments:", sys.argv)
+    if os.name == "nt":
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("xMLTree.UtilityTool")
+        except Exception:
+            pass
     if "--test" in sys.argv:
         try:
             print("All imports successful")
