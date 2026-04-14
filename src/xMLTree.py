@@ -11,6 +11,14 @@ PANDAS_AVAILABLE = False
 BULK_AVAILABLE = False
 DIFF_AVAILABLE = False
 
+
+def resource_path(relative_path: str) -> Path:
+    """Resolve resource path for source and PyInstaller onefile."""
+    base_path = getattr(sys, "_MEIPASS", None)
+    if base_path:
+        return Path(base_path) / relative_path
+    return Path(__file__).resolve().parent.parent / relative_path
+
 try:
     from PyQt6.QtCore import Qt, QTimer, pyqtSignal
     from PyQt6.QtGui import QColor, QBrush, QIcon, QPixmap, QPainter, QPen
@@ -894,7 +902,7 @@ class XMLDifferenceWidget(QWidget):
 class MultiAppWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        app_icon_path = Path(__file__).resolve().parent.parent / "icons" / "xMLTree.png"
+        app_icon_path = resource_path("icons/xMLTree.png")
         if app_icon_path.exists():
             self.setWindowIcon(QIcon(str(app_icon_path)))
         self.setWindowTitle("xMLTree - Utility Tool")
@@ -929,9 +937,8 @@ class MultiAppWindow(QMainWindow):
         self._apply_theme()
 
     def _create_theme_icons(self):
-        icons_dir = Path(__file__).resolve().parent.parent / "icons"
-        day_icon_path = icons_dir / "day.png"
-        night_icon_path = icons_dir / "night.png"
+        day_icon_path = resource_path("icons/day.png")
+        night_icon_path = resource_path("icons/night.png")
 
         if day_icon_path.exists() and night_icon_path.exists():
             return QIcon(str(day_icon_path)), QIcon(str(night_icon_path))
@@ -1032,11 +1039,6 @@ class MultiAppWindow(QMainWindow):
 
 if __name__ == "__main__":
     print("Arguments:", sys.argv)
-    if os.name == "nt":
-        try:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("xMLTree.UtilityTool")
-        except Exception:
-            pass
     if "--test" in sys.argv:
         try:
             print("All imports successful")
